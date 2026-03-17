@@ -368,9 +368,7 @@ func parseProxyInputsFromJSON(body []byte) []CreateProxyInput {
 	var arr []string
 	if err := json.Unmarshal(body, &arr); err == nil {
 		lines := make([]string, 0, len(arr))
-		for _, item := range arr {
-			lines = append(lines, item)
-		}
+		lines = append(lines, arr...)
 		return parseProxyInputs([]byte(strings.Join(lines, "\n")))
 	}
 
