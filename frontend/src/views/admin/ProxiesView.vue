@@ -79,6 +79,9 @@
             <button @click="showExportDataDialog = true" class="btn btn-secondary">
               {{ selectedCount > 0 ? t('admin.proxies.dataExportSelected') : t('admin.proxies.dataExport') }}
             </button>
+            <button @click="openAutoMaintenanceModal" class="btn btn-secondary">
+              {{ t('admin.proxies.autoMaintenance') }}
+            </button>
             <button @click="showCreateModal = true" class="btn btn-primary">
               <Icon name="plus" size="md" class="mr-2" />
               {{ t('admin.proxies.createProxy') }}
@@ -701,6 +704,98 @@
       </template>
     </BaseDialog>
 
+    <BaseDialog
+      :show="showAutoMaintenanceModal"
+      :title="t('admin.proxies.autoMaintenanceTitle')"
+      width="normal"
+      @close="closeAutoMaintenanceModal"
+    >
+      <form id="auto-maintenance-form" @submit.prevent="saveAutoMaintenanceSettings" class="space-y-4">
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+          <input v-model="autoMaintenanceForm.enabled" type="checkbox" class="h-4 w-4" />
+          {{ t('admin.proxies.autoMaintenanceEnabled') }}
+        </label>
+
+        <div>
+          <label class="input-label">{{ t('admin.proxies.autoExtractUrl') }}</label>
+          <input
+            v-model="autoMaintenanceForm.extractUrl"
+            type="url"
+            class="input"
+            :placeholder="t('admin.proxies.autoExtractUrlPlaceholder')"
+          />
+        </div>
+
+        <div>
+          <label class="input-label">{{ t('admin.proxies.autoExtractProxyUrl') }}</label>
+          <input
+            v-model="autoMaintenanceForm.extractProxyUrl"
+            type="text"
+            class="input"
+            :placeholder="t('admin.proxies.autoExtractProxyUrlPlaceholder')"
+          />
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('admin.proxies.autoPoolLowWatermark') }}</label>
+            <input v-model.number="autoMaintenanceForm.poolLowWatermark" type="number" min="1" class="input" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.proxies.autoRefillIntervalMinutes') }}</label>
+            <input v-model.number="autoMaintenanceForm.refillIntervalMinutes" type="number" min="1" class="input" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.proxies.autoHealthCheckIntervalMinutes') }}</label>
+            <input v-model.number="autoMaintenanceForm.healthCheckIntervalMinutes" type="number" min="1" class="input" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.proxies.autoDeadFailureThreshold') }}</label>
+            <input v-model.number="autoMaintenanceForm.deadFailureThreshold" type="number" min="1" class="input" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.proxies.autoSourceFailureThreshold') }}</label>
+            <input v-model.number="autoMaintenanceForm.sourceFailureThreshold" type="number" min="1" class="input" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.proxies.autoSourceConsecutiveFailures') }}</label>
+            <input
+              v-model.number="autoMaintenanceForm.sourceConsecutiveFailures"
+              type="number"
+              min="0"
+              class="input"
+            />
+          </div>
+        </div>
+
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+          <input v-model="autoMaintenanceForm.sourceEnabled" type="checkbox" class="h-4 w-4" />
+          {{ t('admin.proxies.autoSourceEnabled') }}
+        </label>
+
+        <div>
+          <label class="input-label">{{ t('admin.proxies.autoSourceLastError') }}</label>
+          <input v-model="autoMaintenanceForm.sourceLastError" type="text" class="input" readonly />
+        </div>
+
+        <div>
+          <label class="input-label">{{ t('admin.proxies.autoSourceLastSuccessAt') }}</label>
+          <input v-model="autoMaintenanceForm.sourceLastSuccessAtDisplay" type="text" class="input" readonly />
+        </div>
+      </form>
+
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <button @click="closeAutoMaintenanceModal" type="button" class="btn btn-secondary">
+            {{ t('common.cancel') }}
+          </button>
+          <button type="submit" form="auto-maintenance-form" :disabled="savingAutoMaintenance" class="btn btn-primary">
+            {{ savingAutoMaintenance ? t('admin.proxies.savingAutoMaintenance') : t('common.save') }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
+
     <!-- Delete Confirmation Dialog -->
     <ConfirmDialog
       :show="showDeleteDialog"
@@ -868,6 +963,7 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
+import type { UpdateSettingsRequest } from '@/api/admin/settings'
 import type { Proxy, ProxyAccountSummary, ProxyProtocol, ProxyQualityCheckResult } from '@/types'
 import type { Column } from '@/components/common/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -951,6 +1047,23 @@ const createPasswordVisible = ref(false)
 const showEditModal = ref(false)
 const editPasswordVisible = ref(false)
 const editPasswordDirty = ref(false)
+const showAutoMaintenanceModal = ref(false)
+const savingAutoMaintenance = ref(false)
+const autoMaintenanceForm = reactive({
+  enabled: false,
+  extractUrl: '',
+  extractProxyUrl: '',
+  poolLowWatermark: 30,
+  refillIntervalMinutes: 5,
+  healthCheckIntervalMinutes: 10,
+  deadFailureThreshold: 3,
+  sourceFailureThreshold: 3,
+  sourceEnabled: true,
+  sourceConsecutiveFailures: 0,
+  sourceLastError: '',
+  sourceLastSuccessAtUnix: 0,
+  sourceLastSuccessAtDisplay: '-'
+})
 const showImportData = ref(false)
 const showDeleteDialog = ref(false)
 const showBatchDeleteDialog = ref(false)
@@ -1033,6 +1146,83 @@ const isAbortError = (error: unknown) => {
   if (!error || typeof error !== 'object') return false
   const maybeError = error as { name?: string; code?: string }
   return maybeError.name === 'AbortError' || maybeError.code === 'ERR_CANCELED'
+}
+
+const formatUnixTime = (unix: number): string => {
+  if (!unix || unix <= 0) return '-'
+  return new Date(unix * 1000).toLocaleString()
+}
+
+const fillAutoMaintenanceFormFromSettings = (settings: {
+  proxy_auto_maintenance_enabled: boolean
+  proxy_auto_extract_url: string
+  proxy_auto_extract_proxy_url: string
+  proxy_auto_pool_low_watermark: number
+  proxy_auto_refill_interval_minutes: number
+  proxy_auto_health_check_interval_minutes: number
+  proxy_auto_dead_failure_threshold: number
+  proxy_auto_source_failure_threshold: number
+  proxy_auto_source_enabled: boolean
+  proxy_auto_source_consecutive_failures: number
+  proxy_auto_source_last_error: string
+  proxy_auto_source_last_success_at_unix: number
+}) => {
+  autoMaintenanceForm.enabled = settings.proxy_auto_maintenance_enabled
+  autoMaintenanceForm.extractUrl = settings.proxy_auto_extract_url || ''
+  autoMaintenanceForm.extractProxyUrl = settings.proxy_auto_extract_proxy_url || ''
+  autoMaintenanceForm.poolLowWatermark = settings.proxy_auto_pool_low_watermark || 30
+  autoMaintenanceForm.refillIntervalMinutes = settings.proxy_auto_refill_interval_minutes || 5
+  autoMaintenanceForm.healthCheckIntervalMinutes = settings.proxy_auto_health_check_interval_minutes || 10
+  autoMaintenanceForm.deadFailureThreshold = settings.proxy_auto_dead_failure_threshold || 3
+  autoMaintenanceForm.sourceFailureThreshold = settings.proxy_auto_source_failure_threshold || 3
+  autoMaintenanceForm.sourceEnabled = settings.proxy_auto_source_enabled
+  autoMaintenanceForm.sourceConsecutiveFailures = settings.proxy_auto_source_consecutive_failures || 0
+  autoMaintenanceForm.sourceLastError = settings.proxy_auto_source_last_error || ''
+  autoMaintenanceForm.sourceLastSuccessAtUnix = settings.proxy_auto_source_last_success_at_unix || 0
+  autoMaintenanceForm.sourceLastSuccessAtDisplay = formatUnixTime(autoMaintenanceForm.sourceLastSuccessAtUnix)
+}
+
+const openAutoMaintenanceModal = async () => {
+  try {
+    const settings = await adminAPI.settings.getSettings()
+    fillAutoMaintenanceFormFromSettings(settings)
+    showAutoMaintenanceModal.value = true
+  } catch (error: any) {
+    appStore.showError(error?.response?.data?.detail || t('admin.proxies.failedToLoadAutoMaintenance'))
+  }
+}
+
+const closeAutoMaintenanceModal = () => {
+  showAutoMaintenanceModal.value = false
+}
+
+const saveAutoMaintenanceSettings = async () => {
+  if (savingAutoMaintenance.value) return
+  savingAutoMaintenance.value = true
+  try {
+    const payload: UpdateSettingsRequest = {
+      proxy_auto_maintenance_enabled: autoMaintenanceForm.enabled,
+      proxy_auto_extract_url: autoMaintenanceForm.extractUrl.trim(),
+      proxy_auto_extract_proxy_url: autoMaintenanceForm.extractProxyUrl.trim(),
+      proxy_auto_pool_low_watermark: autoMaintenanceForm.poolLowWatermark,
+      proxy_auto_refill_interval_minutes: autoMaintenanceForm.refillIntervalMinutes,
+      proxy_auto_health_check_interval_minutes: autoMaintenanceForm.healthCheckIntervalMinutes,
+      proxy_auto_dead_failure_threshold: autoMaintenanceForm.deadFailureThreshold,
+      proxy_auto_source_failure_threshold: autoMaintenanceForm.sourceFailureThreshold,
+      proxy_auto_source_enabled: autoMaintenanceForm.sourceEnabled,
+      proxy_auto_source_consecutive_failures: autoMaintenanceForm.sourceConsecutiveFailures,
+      proxy_auto_source_last_error: autoMaintenanceForm.sourceLastError,
+      proxy_auto_source_last_success_at_unix: autoMaintenanceForm.sourceLastSuccessAtUnix
+    }
+    const updated = await adminAPI.settings.updateSettings(payload)
+    fillAutoMaintenanceFormFromSettings(updated)
+    appStore.showSuccess(t('admin.proxies.autoMaintenanceSaved'))
+    showAutoMaintenanceModal.value = false
+  } catch (error: any) {
+    appStore.showError(error?.response?.data?.detail || t('admin.proxies.failedToSaveAutoMaintenance'))
+  } finally {
+    savingAutoMaintenance.value = false
+  }
 }
 
 const toggleSelectRow = (id: number, event: Event) => {

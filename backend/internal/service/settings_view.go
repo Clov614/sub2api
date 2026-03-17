@@ -59,6 +59,20 @@ type SystemSettings struct {
 	EnableIdentityPatch bool   `json:"enable_identity_patch"`
 	IdentityPatchPrompt string `json:"identity_patch_prompt"`
 
+	// Proxy auto maintenance settings
+	ProxyAutoMaintenanceEnabled         bool
+	ProxyAutoExtractURL                 string
+	ProxyAutoExtractProxyURL            string
+	ProxyAutoPoolLowWatermark           int
+	ProxyAutoRefillIntervalMinutes      int
+	ProxyAutoHealthCheckIntervalMinutes int
+	ProxyAutoDeadFailureThreshold       int
+	ProxyAutoSourceFailureThreshold     int
+	ProxyAutoSourceEnabled              bool
+	ProxyAutoSourceConsecutiveFailures  int
+	ProxyAutoSourceLastError            string
+	ProxyAutoSourceLastSuccessAtUnix    int64
+
 	// Ops monitoring (vNext)
 	OpsMonitoringEnabled         bool
 	OpsRealtimeMonitoringEnabled bool
@@ -78,6 +92,38 @@ type SystemSettings struct {
 type DefaultSubscriptionSetting struct {
 	GroupID      int64 `json:"group_id"`
 	ValidityDays int   `json:"validity_days"`
+}
+
+type ProxyAutoMaintenanceSettings struct {
+	Enabled                    bool   `json:"enabled"`
+	ExtractURL                 string `json:"extract_url"`
+	ExtractProxyURL            string `json:"extract_proxy_url"`
+	PoolLowWatermark           int    `json:"pool_low_watermark"`
+	RefillIntervalMinutes      int    `json:"refill_interval_minutes"`
+	HealthCheckIntervalMinutes int    `json:"health_check_interval_minutes"`
+	DeadFailureThreshold       int    `json:"dead_failure_threshold"`
+	SourceFailureThreshold     int    `json:"source_failure_threshold"`
+	SourceEnabled              bool   `json:"source_enabled"`
+	SourceConsecutiveFailures  int    `json:"source_consecutive_failures"`
+	SourceLastError            string `json:"source_last_error"`
+	SourceLastSuccessAtUnix    int64  `json:"source_last_success_at_unix"`
+}
+
+func DefaultProxyAutoMaintenanceSettings() *ProxyAutoMaintenanceSettings {
+	return &ProxyAutoMaintenanceSettings{
+		Enabled:                    false,
+		ExtractURL:                 "",
+		ExtractProxyURL:            "",
+		PoolLowWatermark:           30,
+		RefillIntervalMinutes:      5,
+		HealthCheckIntervalMinutes: 10,
+		DeadFailureThreshold:       3,
+		SourceFailureThreshold:     3,
+		SourceEnabled:              true,
+		SourceConsecutiveFailures:  0,
+		SourceLastError:            "",
+		SourceLastSuccessAtUnix:    0,
+	}
 }
 
 type PublicSettings struct {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -113,6 +114,18 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		DefaultConcurrency:                   settings.DefaultConcurrency,
 		DefaultBalance:                       settings.DefaultBalance,
 		DefaultSubscriptions:                 defaultSubscriptions,
+		ProxyAutoMaintenanceEnabled:          settings.ProxyAutoMaintenanceEnabled,
+		ProxyAutoExtractURL:                  settings.ProxyAutoExtractURL,
+		ProxyAutoExtractProxyURL:             settings.ProxyAutoExtractProxyURL,
+		ProxyAutoPoolLowWatermark:            settings.ProxyAutoPoolLowWatermark,
+		ProxyAutoRefillIntervalMinutes:       settings.ProxyAutoRefillIntervalMinutes,
+		ProxyAutoHealthCheckIntervalMinutes:  settings.ProxyAutoHealthCheckIntervalMinutes,
+		ProxyAutoDeadFailureThreshold:        settings.ProxyAutoDeadFailureThreshold,
+		ProxyAutoSourceFailureThreshold:      settings.ProxyAutoSourceFailureThreshold,
+		ProxyAutoSourceEnabled:               settings.ProxyAutoSourceEnabled,
+		ProxyAutoSourceConsecutiveFailures:   settings.ProxyAutoSourceConsecutiveFailures,
+		ProxyAutoSourceLastError:             settings.ProxyAutoSourceLastError,
+		ProxyAutoSourceLastSuccessAtUnix:     settings.ProxyAutoSourceLastSuccessAtUnix,
 		EnableModelFallback:                  settings.EnableModelFallback,
 		FallbackModelAnthropic:               settings.FallbackModelAnthropic,
 		FallbackModelOpenAI:                  settings.FallbackModelOpenAI,
@@ -180,6 +193,20 @@ type UpdateSettingsRequest struct {
 	DefaultConcurrency   int                              `json:"default_concurrency"`
 	DefaultBalance       float64                          `json:"default_balance"`
 	DefaultSubscriptions []dto.DefaultSubscriptionSetting `json:"default_subscriptions"`
+
+	// Proxy auto maintenance
+	ProxyAutoMaintenanceEnabled         *bool   `json:"proxy_auto_maintenance_enabled"`
+	ProxyAutoExtractURL                 *string `json:"proxy_auto_extract_url"`
+	ProxyAutoExtractProxyURL            *string `json:"proxy_auto_extract_proxy_url"`
+	ProxyAutoPoolLowWatermark           *int    `json:"proxy_auto_pool_low_watermark"`
+	ProxyAutoRefillIntervalMinutes      *int    `json:"proxy_auto_refill_interval_minutes"`
+	ProxyAutoHealthCheckIntervalMinutes *int    `json:"proxy_auto_health_check_interval_minutes"`
+	ProxyAutoDeadFailureThreshold       *int    `json:"proxy_auto_dead_failure_threshold"`
+	ProxyAutoSourceFailureThreshold     *int    `json:"proxy_auto_source_failure_threshold"`
+	ProxyAutoSourceEnabled              *bool   `json:"proxy_auto_source_enabled"`
+	ProxyAutoSourceConsecutiveFailures  *int    `json:"proxy_auto_source_consecutive_failures"`
+	ProxyAutoSourceLastError            *string `json:"proxy_auto_source_last_error"`
+	ProxyAutoSourceLastSuccessAtUnix    *int64  `json:"proxy_auto_source_last_success_at_unix"`
 
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`
@@ -337,6 +364,79 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
+	proxyAutoMaintenanceEnabled := previousSettings.ProxyAutoMaintenanceEnabled
+	if req.ProxyAutoMaintenanceEnabled != nil {
+		proxyAutoMaintenanceEnabled = *req.ProxyAutoMaintenanceEnabled
+	}
+
+	proxyAutoExtractURL := previousSettings.ProxyAutoExtractURL
+	if req.ProxyAutoExtractURL != nil {
+		proxyAutoExtractURL = strings.TrimSpace(*req.ProxyAutoExtractURL)
+	}
+
+	proxyAutoExtractProxyURL := previousSettings.ProxyAutoExtractProxyURL
+	if req.ProxyAutoExtractProxyURL != nil {
+		proxyAutoExtractProxyURL = strings.TrimSpace(*req.ProxyAutoExtractProxyURL)
+	}
+
+	proxyAutoPoolLowWatermark := previousSettings.ProxyAutoPoolLowWatermark
+	if req.ProxyAutoPoolLowWatermark != nil {
+		proxyAutoPoolLowWatermark = clampProxyAutoPoolLowWatermark(*req.ProxyAutoPoolLowWatermark)
+	}
+
+	proxyAutoRefillIntervalMinutes := previousSettings.ProxyAutoRefillIntervalMinutes
+	if req.ProxyAutoRefillIntervalMinutes != nil {
+		proxyAutoRefillIntervalMinutes = clampProxyAutoRefillIntervalMinutes(*req.ProxyAutoRefillIntervalMinutes)
+	}
+
+	proxyAutoHealthCheckIntervalMinutes := previousSettings.ProxyAutoHealthCheckIntervalMinutes
+	if req.ProxyAutoHealthCheckIntervalMinutes != nil {
+		proxyAutoHealthCheckIntervalMinutes = clampProxyAutoHealthCheckIntervalMinutes(*req.ProxyAutoHealthCheckIntervalMinutes)
+	}
+
+	proxyAutoDeadFailureThreshold := previousSettings.ProxyAutoDeadFailureThreshold
+	if req.ProxyAutoDeadFailureThreshold != nil {
+		proxyAutoDeadFailureThreshold = clampProxyAutoDeadFailureThreshold(*req.ProxyAutoDeadFailureThreshold)
+	}
+
+	proxyAutoSourceFailureThreshold := previousSettings.ProxyAutoSourceFailureThreshold
+	if req.ProxyAutoSourceFailureThreshold != nil {
+		proxyAutoSourceFailureThreshold = clampProxyAutoSourceFailureThreshold(*req.ProxyAutoSourceFailureThreshold)
+	}
+
+	proxyAutoSourceEnabled := previousSettings.ProxyAutoSourceEnabled
+	if req.ProxyAutoSourceEnabled != nil {
+		proxyAutoSourceEnabled = *req.ProxyAutoSourceEnabled
+	}
+
+	proxyAutoSourceConsecutiveFailures := previousSettings.ProxyAutoSourceConsecutiveFailures
+	if req.ProxyAutoSourceConsecutiveFailures != nil {
+		proxyAutoSourceConsecutiveFailures = clampProxyAutoSourceConsecutiveFailures(*req.ProxyAutoSourceConsecutiveFailures)
+	}
+
+	proxyAutoSourceLastError := previousSettings.ProxyAutoSourceLastError
+	if req.ProxyAutoSourceLastError != nil {
+		proxyAutoSourceLastError = strings.TrimSpace(*req.ProxyAutoSourceLastError)
+	}
+
+	proxyAutoSourceLastSuccessAtUnix := previousSettings.ProxyAutoSourceLastSuccessAtUnix
+	if req.ProxyAutoSourceLastSuccessAtUnix != nil {
+		proxyAutoSourceLastSuccessAtUnix = *req.ProxyAutoSourceLastSuccessAtUnix
+	}
+
+	if proxyAutoExtractURL != "" {
+		if err := config.ValidateAbsoluteHTTPURL(proxyAutoExtractURL); err != nil {
+			response.BadRequest(c, "Proxy auto extract URL must be an absolute http(s) URL")
+			return
+		}
+	}
+	if proxyAutoExtractProxyURL != "" {
+		if _, _, err := proxyurl.Parse(proxyAutoExtractProxyURL); err != nil {
+			response.BadRequest(c, "Proxy auto extract proxy URL is invalid: "+err.Error())
+			return
+		}
+	}
+
 	// 自定义菜单项验证
 	const (
 		maxCustomMenuItems    = 20
@@ -443,53 +543,65 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	settings := &service.SystemSettings{
-		RegistrationEnabled:              req.RegistrationEnabled,
-		EmailVerifyEnabled:               req.EmailVerifyEnabled,
-		RegistrationEmailSuffixWhitelist: req.RegistrationEmailSuffixWhitelist,
-		PromoCodeEnabled:                 req.PromoCodeEnabled,
-		PasswordResetEnabled:             req.PasswordResetEnabled,
-		FrontendURL:                      req.FrontendURL,
-		InvitationCodeEnabled:            req.InvitationCodeEnabled,
-		TotpEnabled:                      req.TotpEnabled,
-		SMTPHost:                         req.SMTPHost,
-		SMTPPort:                         req.SMTPPort,
-		SMTPUsername:                     req.SMTPUsername,
-		SMTPPassword:                     req.SMTPPassword,
-		SMTPFrom:                         req.SMTPFrom,
-		SMTPFromName:                     req.SMTPFromName,
-		SMTPUseTLS:                       req.SMTPUseTLS,
-		TurnstileEnabled:                 req.TurnstileEnabled,
-		TurnstileSiteKey:                 req.TurnstileSiteKey,
-		TurnstileSecretKey:               req.TurnstileSecretKey,
-		LinuxDoConnectEnabled:            req.LinuxDoConnectEnabled,
-		LinuxDoConnectClientID:           req.LinuxDoConnectClientID,
-		LinuxDoConnectClientSecret:       req.LinuxDoConnectClientSecret,
-		LinuxDoConnectRedirectURL:        req.LinuxDoConnectRedirectURL,
-		SiteName:                         req.SiteName,
-		SiteLogo:                         req.SiteLogo,
-		SiteSubtitle:                     req.SiteSubtitle,
-		APIBaseURL:                       req.APIBaseURL,
-		ContactInfo:                      req.ContactInfo,
-		DocURL:                           req.DocURL,
-		HomeContent:                      req.HomeContent,
-		HideCcsImportButton:              req.HideCcsImportButton,
-		PurchaseSubscriptionEnabled:      purchaseEnabled,
-		PurchaseSubscriptionURL:          purchaseURL,
-		SoraClientEnabled:                req.SoraClientEnabled,
-		CustomMenuItems:                  customMenuJSON,
-		DefaultConcurrency:               req.DefaultConcurrency,
-		DefaultBalance:                   req.DefaultBalance,
-		DefaultSubscriptions:             defaultSubscriptions,
-		EnableModelFallback:              req.EnableModelFallback,
-		FallbackModelAnthropic:           req.FallbackModelAnthropic,
-		FallbackModelOpenAI:              req.FallbackModelOpenAI,
-		FallbackModelGemini:              req.FallbackModelGemini,
-		FallbackModelAntigravity:         req.FallbackModelAntigravity,
-		EnableIdentityPatch:              req.EnableIdentityPatch,
-		IdentityPatchPrompt:              req.IdentityPatchPrompt,
-		MinClaudeCodeVersion:             req.MinClaudeCodeVersion,
-		AllowUngroupedKeyScheduling:      req.AllowUngroupedKeyScheduling,
-		BackendModeEnabled:               req.BackendModeEnabled,
+		RegistrationEnabled:                 req.RegistrationEnabled,
+		EmailVerifyEnabled:                  req.EmailVerifyEnabled,
+		RegistrationEmailSuffixWhitelist:    req.RegistrationEmailSuffixWhitelist,
+		PromoCodeEnabled:                    req.PromoCodeEnabled,
+		PasswordResetEnabled:                req.PasswordResetEnabled,
+		FrontendURL:                         req.FrontendURL,
+		InvitationCodeEnabled:               req.InvitationCodeEnabled,
+		TotpEnabled:                         req.TotpEnabled,
+		SMTPHost:                            req.SMTPHost,
+		SMTPPort:                            req.SMTPPort,
+		SMTPUsername:                        req.SMTPUsername,
+		SMTPPassword:                        req.SMTPPassword,
+		SMTPFrom:                            req.SMTPFrom,
+		SMTPFromName:                        req.SMTPFromName,
+		SMTPUseTLS:                          req.SMTPUseTLS,
+		TurnstileEnabled:                    req.TurnstileEnabled,
+		TurnstileSiteKey:                    req.TurnstileSiteKey,
+		TurnstileSecretKey:                  req.TurnstileSecretKey,
+		LinuxDoConnectEnabled:               req.LinuxDoConnectEnabled,
+		LinuxDoConnectClientID:              req.LinuxDoConnectClientID,
+		LinuxDoConnectClientSecret:          req.LinuxDoConnectClientSecret,
+		LinuxDoConnectRedirectURL:           req.LinuxDoConnectRedirectURL,
+		SiteName:                            req.SiteName,
+		SiteLogo:                            req.SiteLogo,
+		SiteSubtitle:                        req.SiteSubtitle,
+		APIBaseURL:                          req.APIBaseURL,
+		ContactInfo:                         req.ContactInfo,
+		DocURL:                              req.DocURL,
+		HomeContent:                         req.HomeContent,
+		HideCcsImportButton:                 req.HideCcsImportButton,
+		PurchaseSubscriptionEnabled:         purchaseEnabled,
+		PurchaseSubscriptionURL:             purchaseURL,
+		SoraClientEnabled:                   req.SoraClientEnabled,
+		CustomMenuItems:                     customMenuJSON,
+		DefaultConcurrency:                  req.DefaultConcurrency,
+		DefaultBalance:                      req.DefaultBalance,
+		DefaultSubscriptions:                defaultSubscriptions,
+		ProxyAutoMaintenanceEnabled:         proxyAutoMaintenanceEnabled,
+		ProxyAutoExtractURL:                 proxyAutoExtractURL,
+		ProxyAutoExtractProxyURL:            proxyAutoExtractProxyURL,
+		ProxyAutoPoolLowWatermark:           proxyAutoPoolLowWatermark,
+		ProxyAutoRefillIntervalMinutes:      proxyAutoRefillIntervalMinutes,
+		ProxyAutoHealthCheckIntervalMinutes: proxyAutoHealthCheckIntervalMinutes,
+		ProxyAutoDeadFailureThreshold:       proxyAutoDeadFailureThreshold,
+		ProxyAutoSourceFailureThreshold:     proxyAutoSourceFailureThreshold,
+		ProxyAutoSourceEnabled:              proxyAutoSourceEnabled,
+		ProxyAutoSourceConsecutiveFailures:  proxyAutoSourceConsecutiveFailures,
+		ProxyAutoSourceLastError:            proxyAutoSourceLastError,
+		ProxyAutoSourceLastSuccessAtUnix:    proxyAutoSourceLastSuccessAtUnix,
+		EnableModelFallback:                 req.EnableModelFallback,
+		FallbackModelAnthropic:              req.FallbackModelAnthropic,
+		FallbackModelOpenAI:                 req.FallbackModelOpenAI,
+		FallbackModelGemini:                 req.FallbackModelGemini,
+		FallbackModelAntigravity:            req.FallbackModelAntigravity,
+		EnableIdentityPatch:                 req.EnableIdentityPatch,
+		IdentityPatchPrompt:                 req.IdentityPatchPrompt,
+		MinClaudeCodeVersion:                req.MinClaudeCodeVersion,
+		AllowUngroupedKeyScheduling:         req.AllowUngroupedKeyScheduling,
+		BackendModeEnabled:                  req.BackendModeEnabled,
 		OpsMonitoringEnabled: func() bool {
 			if req.OpsMonitoringEnabled != nil {
 				return *req.OpsMonitoringEnabled
@@ -576,6 +688,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		DefaultConcurrency:                   updatedSettings.DefaultConcurrency,
 		DefaultBalance:                       updatedSettings.DefaultBalance,
 		DefaultSubscriptions:                 updatedDefaultSubscriptions,
+		ProxyAutoMaintenanceEnabled:          updatedSettings.ProxyAutoMaintenanceEnabled,
+		ProxyAutoExtractURL:                  updatedSettings.ProxyAutoExtractURL,
+		ProxyAutoExtractProxyURL:             updatedSettings.ProxyAutoExtractProxyURL,
+		ProxyAutoPoolLowWatermark:            updatedSettings.ProxyAutoPoolLowWatermark,
+		ProxyAutoRefillIntervalMinutes:       updatedSettings.ProxyAutoRefillIntervalMinutes,
+		ProxyAutoHealthCheckIntervalMinutes:  updatedSettings.ProxyAutoHealthCheckIntervalMinutes,
+		ProxyAutoDeadFailureThreshold:        updatedSettings.ProxyAutoDeadFailureThreshold,
+		ProxyAutoSourceFailureThreshold:      updatedSettings.ProxyAutoSourceFailureThreshold,
+		ProxyAutoSourceEnabled:               updatedSettings.ProxyAutoSourceEnabled,
+		ProxyAutoSourceConsecutiveFailures:   updatedSettings.ProxyAutoSourceConsecutiveFailures,
+		ProxyAutoSourceLastError:             updatedSettings.ProxyAutoSourceLastError,
+		ProxyAutoSourceLastSuccessAtUnix:     updatedSettings.ProxyAutoSourceLastSuccessAtUnix,
 		EnableModelFallback:                  updatedSettings.EnableModelFallback,
 		FallbackModelAnthropic:               updatedSettings.FallbackModelAnthropic,
 		FallbackModelOpenAI:                  updatedSettings.FallbackModelOpenAI,
@@ -708,6 +832,42 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if !equalDefaultSubscriptions(before.DefaultSubscriptions, after.DefaultSubscriptions) {
 		changed = append(changed, "default_subscriptions")
 	}
+	if before.ProxyAutoMaintenanceEnabled != after.ProxyAutoMaintenanceEnabled {
+		changed = append(changed, "proxy_auto_maintenance_enabled")
+	}
+	if before.ProxyAutoExtractURL != after.ProxyAutoExtractURL {
+		changed = append(changed, "proxy_auto_extract_url")
+	}
+	if before.ProxyAutoExtractProxyURL != after.ProxyAutoExtractProxyURL {
+		changed = append(changed, "proxy_auto_extract_proxy_url")
+	}
+	if before.ProxyAutoPoolLowWatermark != after.ProxyAutoPoolLowWatermark {
+		changed = append(changed, "proxy_auto_pool_low_watermark")
+	}
+	if before.ProxyAutoRefillIntervalMinutes != after.ProxyAutoRefillIntervalMinutes {
+		changed = append(changed, "proxy_auto_refill_interval_minutes")
+	}
+	if before.ProxyAutoHealthCheckIntervalMinutes != after.ProxyAutoHealthCheckIntervalMinutes {
+		changed = append(changed, "proxy_auto_health_check_interval_minutes")
+	}
+	if before.ProxyAutoDeadFailureThreshold != after.ProxyAutoDeadFailureThreshold {
+		changed = append(changed, "proxy_auto_dead_failure_threshold")
+	}
+	if before.ProxyAutoSourceFailureThreshold != after.ProxyAutoSourceFailureThreshold {
+		changed = append(changed, "proxy_auto_source_failure_threshold")
+	}
+	if before.ProxyAutoSourceEnabled != after.ProxyAutoSourceEnabled {
+		changed = append(changed, "proxy_auto_source_enabled")
+	}
+	if before.ProxyAutoSourceConsecutiveFailures != after.ProxyAutoSourceConsecutiveFailures {
+		changed = append(changed, "proxy_auto_source_consecutive_failures")
+	}
+	if before.ProxyAutoSourceLastError != after.ProxyAutoSourceLastError {
+		changed = append(changed, "proxy_auto_source_last_error")
+	}
+	if before.ProxyAutoSourceLastSuccessAtUnix != after.ProxyAutoSourceLastSuccessAtUnix {
+		changed = append(changed, "proxy_auto_source_last_success_at_unix")
+	}
 	if before.EnableModelFallback != after.EnableModelFallback {
 		changed = append(changed, "enable_model_fallback")
 	}
@@ -801,6 +961,66 @@ func equalDefaultSubscriptions(a, b []service.DefaultSubscriptionSetting) bool {
 		}
 	}
 	return true
+}
+
+func clampProxyAutoPoolLowWatermark(v int) int {
+	if v < 1 {
+		return 30
+	}
+	if v > 10000 {
+		return 10000
+	}
+	return v
+}
+
+func clampProxyAutoRefillIntervalMinutes(v int) int {
+	if v < 1 {
+		return 5
+	}
+	if v > 1440 {
+		return 1440
+	}
+	return v
+}
+
+func clampProxyAutoHealthCheckIntervalMinutes(v int) int {
+	if v < 1 {
+		return 10
+	}
+	if v > 1440 {
+		return 1440
+	}
+	return v
+}
+
+func clampProxyAutoDeadFailureThreshold(v int) int {
+	if v < 1 {
+		return 3
+	}
+	if v > 20 {
+		return 20
+	}
+	return v
+}
+
+func clampProxyAutoSourceFailureThreshold(v int) int {
+	if v < 1 {
+		return 3
+	}
+	if v > 20 {
+		return 20
+	}
+	return v
+}
+
+func clampProxyAutoSourceConsecutiveFailures(v int) int {
+	if v < 0 {
+		return 0
+	}
+	if v > 100000 {
+		return 100000
+	}
+	return v
 }
 
 // TestSMTPRequest 测试SMTP连接请求

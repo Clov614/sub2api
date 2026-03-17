@@ -62,6 +62,20 @@ export interface SystemSettings {
   linuxdo_connect_client_secret_configured: boolean
   linuxdo_connect_redirect_url: string
 
+  // Proxy auto maintenance
+  proxy_auto_maintenance_enabled: boolean
+  proxy_auto_extract_url: string
+  proxy_auto_extract_proxy_url: string
+  proxy_auto_pool_low_watermark: number
+  proxy_auto_refill_interval_minutes: number
+  proxy_auto_health_check_interval_minutes: number
+  proxy_auto_dead_failure_threshold: number
+  proxy_auto_source_failure_threshold: number
+  proxy_auto_source_enabled: boolean
+  proxy_auto_source_consecutive_failures: number
+  proxy_auto_source_last_error: string
+  proxy_auto_source_last_success_at_unix: number
+
   // Model fallback configuration
   enable_model_fallback: boolean
   fallback_model_anthropic: string
@@ -125,6 +139,18 @@ export interface UpdateSettingsRequest {
   linuxdo_connect_client_id?: string
   linuxdo_connect_client_secret?: string
   linuxdo_connect_redirect_url?: string
+  proxy_auto_maintenance_enabled?: boolean
+  proxy_auto_extract_url?: string
+  proxy_auto_extract_proxy_url?: string
+  proxy_auto_pool_low_watermark?: number
+  proxy_auto_refill_interval_minutes?: number
+  proxy_auto_health_check_interval_minutes?: number
+  proxy_auto_dead_failure_threshold?: number
+  proxy_auto_source_failure_threshold?: number
+  proxy_auto_source_enabled?: boolean
+  proxy_auto_source_consecutive_failures?: number
+  proxy_auto_source_last_error?: string
+  proxy_auto_source_last_success_at_unix?: number
   enable_model_fallback?: boolean
   fallback_model_anthropic?: string
   fallback_model_openai?: string

@@ -143,6 +143,23 @@ const (
 	SettingKeyIdentityPatchPrompt = "identity_patch_prompt"
 
 	// =========================
+	// Proxy Auto Maintenance
+	// =========================
+
+	SettingKeyProxyAutoMaintenanceEnabled         = "proxy_auto_maintenance_enabled"
+	SettingKeyProxyAutoExtractURL                 = "proxy_auto_extract_url"
+	SettingKeyProxyAutoExtractProxyURL            = "proxy_auto_extract_proxy_url"
+	SettingKeyProxyAutoPoolLowWatermark           = "proxy_auto_pool_low_watermark"
+	SettingKeyProxyAutoRefillIntervalMinutes      = "proxy_auto_refill_interval_minutes"
+	SettingKeyProxyAutoHealthCheckIntervalMinutes = "proxy_auto_health_check_interval_minutes"
+	SettingKeyProxyAutoDeadFailureThreshold       = "proxy_auto_dead_failure_threshold"
+	SettingKeyProxyAutoSourceFailureThreshold     = "proxy_auto_source_failure_threshold"
+	SettingKeyProxyAutoSourceEnabled              = "proxy_auto_source_enabled"
+	SettingKeyProxyAutoSourceConsecutiveFailures  = "proxy_auto_source_consecutive_failures"
+	SettingKeyProxyAutoSourceLastError            = "proxy_auto_source_last_error"
+	SettingKeyProxyAutoSourceLastSuccessAtUnix    = "proxy_auto_source_last_success_at_unix"
+
+	// =========================
 	// Ops Monitoring (vNext)
 	// =========================
 

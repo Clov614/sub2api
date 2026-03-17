@@ -61,6 +61,19 @@ type SystemSettings struct {
 	DefaultBalance       float64                      `json:"default_balance"`
 	DefaultSubscriptions []DefaultSubscriptionSetting `json:"default_subscriptions"`
 
+	ProxyAutoMaintenanceEnabled         bool   `json:"proxy_auto_maintenance_enabled"`
+	ProxyAutoExtractURL                 string `json:"proxy_auto_extract_url"`
+	ProxyAutoExtractProxyURL            string `json:"proxy_auto_extract_proxy_url"`
+	ProxyAutoPoolLowWatermark           int    `json:"proxy_auto_pool_low_watermark"`
+	ProxyAutoRefillIntervalMinutes      int    `json:"proxy_auto_refill_interval_minutes"`
+	ProxyAutoHealthCheckIntervalMinutes int    `json:"proxy_auto_health_check_interval_minutes"`
+	ProxyAutoDeadFailureThreshold       int    `json:"proxy_auto_dead_failure_threshold"`
+	ProxyAutoSourceFailureThreshold     int    `json:"proxy_auto_source_failure_threshold"`
+	ProxyAutoSourceEnabled              bool   `json:"proxy_auto_source_enabled"`
+	ProxyAutoSourceConsecutiveFailures  int    `json:"proxy_auto_source_consecutive_failures"`
+	ProxyAutoSourceLastError            string `json:"proxy_auto_source_last_error"`
+	ProxyAutoSourceLastSuccessAtUnix    int64  `json:"proxy_auto_source_last_success_at_unix"`
+
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`
 	FallbackModelAnthropic   string `json:"fallback_model_anthropic"`

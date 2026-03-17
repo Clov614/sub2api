@@ -463,6 +463,20 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	}
 	updates[SettingKeyDefaultSubscriptions] = string(defaultSubsJSON)
 
+	// Proxy auto maintenance
+	updates[SettingKeyProxyAutoMaintenanceEnabled] = strconv.FormatBool(settings.ProxyAutoMaintenanceEnabled)
+	updates[SettingKeyProxyAutoExtractURL] = strings.TrimSpace(settings.ProxyAutoExtractURL)
+	updates[SettingKeyProxyAutoExtractProxyURL] = strings.TrimSpace(settings.ProxyAutoExtractProxyURL)
+	updates[SettingKeyProxyAutoPoolLowWatermark] = strconv.Itoa(clampProxyAutoPoolLowWatermark(settings.ProxyAutoPoolLowWatermark))
+	updates[SettingKeyProxyAutoRefillIntervalMinutes] = strconv.Itoa(clampProxyAutoRefillIntervalMinutes(settings.ProxyAutoRefillIntervalMinutes))
+	updates[SettingKeyProxyAutoHealthCheckIntervalMinutes] = strconv.Itoa(clampProxyAutoHealthCheckIntervalMinutes(settings.ProxyAutoHealthCheckIntervalMinutes))
+	updates[SettingKeyProxyAutoDeadFailureThreshold] = strconv.Itoa(clampProxyAutoDeadFailureThreshold(settings.ProxyAutoDeadFailureThreshold))
+	updates[SettingKeyProxyAutoSourceFailureThreshold] = strconv.Itoa(clampProxyAutoSourceFailureThreshold(settings.ProxyAutoSourceFailureThreshold))
+	updates[SettingKeyProxyAutoSourceEnabled] = strconv.FormatBool(settings.ProxyAutoSourceEnabled)
+	updates[SettingKeyProxyAutoSourceConsecutiveFailures] = strconv.Itoa(clampProxyAutoSourceConsecutiveFailures(settings.ProxyAutoSourceConsecutiveFailures))
+	updates[SettingKeyProxyAutoSourceLastError] = strings.TrimSpace(settings.ProxyAutoSourceLastError)
+	updates[SettingKeyProxyAutoSourceLastSuccessAtUnix] = strconv.FormatInt(settings.ProxyAutoSourceLastSuccessAtUnix, 10)
+
 	// Model fallback configuration
 	updates[SettingKeyEnableModelFallback] = strconv.FormatBool(settings.EnableModelFallback)
 	updates[SettingKeyFallbackModelAnthropic] = settings.FallbackModelAnthropic
@@ -727,21 +741,33 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 
 	// 初始化默认设置
 	defaults := map[string]string{
-		SettingKeyRegistrationEnabled:              "true",
-		SettingKeyEmailVerifyEnabled:               "false",
-		SettingKeyRegistrationEmailSuffixWhitelist: "[]",
-		SettingKeyPromoCodeEnabled:                 "true", // 默认启用优惠码功能
-		SettingKeySiteName:                         "Sub2API",
-		SettingKeySiteLogo:                         "",
-		SettingKeyPurchaseSubscriptionEnabled:      "false",
-		SettingKeyPurchaseSubscriptionURL:          "",
-		SettingKeySoraClientEnabled:                "false",
-		SettingKeyCustomMenuItems:                  "[]",
-		SettingKeyDefaultConcurrency:               strconv.Itoa(s.cfg.Default.UserConcurrency),
-		SettingKeyDefaultBalance:                   strconv.FormatFloat(s.cfg.Default.UserBalance, 'f', 8, 64),
-		SettingKeyDefaultSubscriptions:             "[]",
-		SettingKeySMTPPort:                         "587",
-		SettingKeySMTPUseTLS:                       "false",
+		SettingKeyRegistrationEnabled:                 "true",
+		SettingKeyEmailVerifyEnabled:                  "false",
+		SettingKeyRegistrationEmailSuffixWhitelist:    "[]",
+		SettingKeyPromoCodeEnabled:                    "true", // 默认启用优惠码功能
+		SettingKeySiteName:                            "Sub2API",
+		SettingKeySiteLogo:                            "",
+		SettingKeyPurchaseSubscriptionEnabled:         "false",
+		SettingKeyPurchaseSubscriptionURL:             "",
+		SettingKeySoraClientEnabled:                   "false",
+		SettingKeyCustomMenuItems:                     "[]",
+		SettingKeyDefaultConcurrency:                  strconv.Itoa(s.cfg.Default.UserConcurrency),
+		SettingKeyDefaultBalance:                      strconv.FormatFloat(s.cfg.Default.UserBalance, 'f', 8, 64),
+		SettingKeyDefaultSubscriptions:                "[]",
+		SettingKeyProxyAutoMaintenanceEnabled:         "false",
+		SettingKeyProxyAutoExtractURL:                 "",
+		SettingKeyProxyAutoExtractProxyURL:            "",
+		SettingKeyProxyAutoPoolLowWatermark:           "30",
+		SettingKeyProxyAutoRefillIntervalMinutes:      "5",
+		SettingKeyProxyAutoHealthCheckIntervalMinutes: "10",
+		SettingKeyProxyAutoDeadFailureThreshold:       "3",
+		SettingKeyProxyAutoSourceFailureThreshold:     "3",
+		SettingKeyProxyAutoSourceEnabled:              "true",
+		SettingKeyProxyAutoSourceConsecutiveFailures:  "0",
+		SettingKeyProxyAutoSourceLastError:            "",
+		SettingKeyProxyAutoSourceLastSuccessAtUnix:    "0",
+		SettingKeySMTPPort:                            "587",
+		SettingKeySMTPUseTLS:                          "false",
 		// Model fallback defaults
 		SettingKeyEnableModelFallback:      "false",
 		SettingKeyFallbackModelAnthropic:   "claude-3-5-sonnet-20241022",
@@ -802,6 +828,10 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		SoraClientEnabled:                settings[SettingKeySoraClientEnabled] == "true",
 		CustomMenuItems:                  settings[SettingKeyCustomMenuItems],
 		BackendModeEnabled:               settings[SettingKeyBackendModeEnabled] == "true",
+		ProxyAutoMaintenanceEnabled:      settings[SettingKeyProxyAutoMaintenanceEnabled] == "true",
+		ProxyAutoExtractURL:              strings.TrimSpace(settings[SettingKeyProxyAutoExtractURL]),
+		ProxyAutoExtractProxyURL:         strings.TrimSpace(settings[SettingKeyProxyAutoExtractProxyURL]),
+		ProxyAutoSourceLastError:         strings.TrimSpace(settings[SettingKeyProxyAutoSourceLastError]),
 	}
 
 	// 解析整数类型
@@ -816,6 +846,15 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	} else {
 		result.DefaultConcurrency = s.cfg.Default.UserConcurrency
 	}
+
+	result.ProxyAutoPoolLowWatermark = clampProxyAutoPoolLowWatermark(parseSettingIntWithDefault(settings[SettingKeyProxyAutoPoolLowWatermark], 30))
+	result.ProxyAutoRefillIntervalMinutes = clampProxyAutoRefillIntervalMinutes(parseSettingIntWithDefault(settings[SettingKeyProxyAutoRefillIntervalMinutes], 5))
+	result.ProxyAutoHealthCheckIntervalMinutes = clampProxyAutoHealthCheckIntervalMinutes(parseSettingIntWithDefault(settings[SettingKeyProxyAutoHealthCheckIntervalMinutes], 10))
+	result.ProxyAutoDeadFailureThreshold = clampProxyAutoDeadFailureThreshold(parseSettingIntWithDefault(settings[SettingKeyProxyAutoDeadFailureThreshold], 3))
+	result.ProxyAutoSourceFailureThreshold = clampProxyAutoSourceFailureThreshold(parseSettingIntWithDefault(settings[SettingKeyProxyAutoSourceFailureThreshold], 3))
+	result.ProxyAutoSourceConsecutiveFailures = clampProxyAutoSourceConsecutiveFailures(parseSettingIntWithDefault(settings[SettingKeyProxyAutoSourceConsecutiveFailures], 0))
+	result.ProxyAutoSourceEnabled = !isFalseSettingValue(settings[SettingKeyProxyAutoSourceEnabled])
+	result.ProxyAutoSourceLastSuccessAtUnix = parseSettingInt64WithDefault(settings[SettingKeyProxyAutoSourceLastSuccessAtUnix], 0)
 
 	// 解析浮点数类型
 	if balance, err := strconv.ParseFloat(settings[SettingKeyDefaultBalance], 64); err == nil {
@@ -934,6 +973,82 @@ func parseDefaultSubscriptions(raw string) []DefaultSubscriptionSetting {
 	}
 
 	return normalized
+}
+
+func parseSettingIntWithDefault(raw string, defaultValue int) int {
+	v, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return defaultValue
+	}
+	return v
+}
+
+func parseSettingInt64WithDefault(raw string, defaultValue int64) int64 {
+	v, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil {
+		return defaultValue
+	}
+	return v
+}
+
+func clampProxyAutoPoolLowWatermark(v int) int {
+	if v < 1 {
+		return 30
+	}
+	if v > 10000 {
+		return 10000
+	}
+	return v
+}
+
+func clampProxyAutoRefillIntervalMinutes(v int) int {
+	if v < 1 {
+		return 5
+	}
+	if v > 1440 {
+		return 1440
+	}
+	return v
+}
+
+func clampProxyAutoHealthCheckIntervalMinutes(v int) int {
+	if v < 1 {
+		return 10
+	}
+	if v > 1440 {
+		return 1440
+	}
+	return v
+}
+
+func clampProxyAutoDeadFailureThreshold(v int) int {
+	if v < 1 {
+		return 3
+	}
+	if v > 20 {
+		return 20
+	}
+	return v
+}
+
+func clampProxyAutoSourceFailureThreshold(v int) int {
+	if v < 1 {
+		return 3
+	}
+	if v > 20 {
+		return 20
+	}
+	return v
+}
+
+func clampProxyAutoSourceConsecutiveFailures(v int) int {
+	if v < 0 {
+		return 0
+	}
+	if v > 100000 {
+		return 100000
+	}
+	return v
 }
 
 // getStringOrDefault 获取字符串值或默认值
@@ -1228,6 +1343,39 @@ func (s *SettingService) IsUngroupedKeySchedulingAllowed(ctx context.Context) bo
 		return false // fail-closed: 查询失败时默认不允许
 	}
 	return value == "true"
+}
+
+// GetProxyAutoMaintenanceSettings returns proxy auto-maintenance settings from DB-backed settings.
+func (s *SettingService) GetProxyAutoMaintenanceSettings(ctx context.Context) *ProxyAutoMaintenanceSettings {
+	settings, err := s.GetAllSettings(ctx)
+	if err != nil || settings == nil {
+		return DefaultProxyAutoMaintenanceSettings()
+	}
+	return &ProxyAutoMaintenanceSettings{
+		Enabled:                    settings.ProxyAutoMaintenanceEnabled,
+		ExtractURL:                 settings.ProxyAutoExtractURL,
+		ExtractProxyURL:            settings.ProxyAutoExtractProxyURL,
+		PoolLowWatermark:           settings.ProxyAutoPoolLowWatermark,
+		RefillIntervalMinutes:      settings.ProxyAutoRefillIntervalMinutes,
+		HealthCheckIntervalMinutes: settings.ProxyAutoHealthCheckIntervalMinutes,
+		DeadFailureThreshold:       settings.ProxyAutoDeadFailureThreshold,
+		SourceFailureThreshold:     settings.ProxyAutoSourceFailureThreshold,
+		SourceEnabled:              settings.ProxyAutoSourceEnabled,
+		SourceConsecutiveFailures:  settings.ProxyAutoSourceConsecutiveFailures,
+		SourceLastError:            settings.ProxyAutoSourceLastError,
+		SourceLastSuccessAtUnix:    settings.ProxyAutoSourceLastSuccessAtUnix,
+	}
+}
+
+// SetProxyAutoSourceRuntime updates source runtime state without changing administrator-configured knobs.
+func (s *SettingService) SetProxyAutoSourceRuntime(ctx context.Context, sourceEnabled bool, consecutiveFailures int, lastError string, lastSuccessAtUnix int64) error {
+	updates := map[string]string{
+		SettingKeyProxyAutoSourceEnabled:             strconv.FormatBool(sourceEnabled),
+		SettingKeyProxyAutoSourceConsecutiveFailures: strconv.Itoa(clampProxyAutoSourceConsecutiveFailures(consecutiveFailures)),
+		SettingKeyProxyAutoSourceLastError:           strings.TrimSpace(lastError),
+		SettingKeyProxyAutoSourceLastSuccessAtUnix:   strconv.FormatInt(lastSuccessAtUnix, 10),
+	}
+	return s.settingRepo.SetMultiple(ctx, updates)
 }
 
 // GetMinClaudeCodeVersion 获取最低 Claude Code 版本号要求

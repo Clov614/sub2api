@@ -363,6 +363,17 @@ func ProvideScheduledTestRunnerService(
 	return svc
 }
 
+// ProvideProxyAutoMaintenanceService creates and starts ProxyAutoMaintenanceService.
+func ProvideProxyAutoMaintenanceService(
+	adminService AdminService,
+	settingService *SettingService,
+	cfg *config.Config,
+) *ProxyAutoMaintenanceService {
+	svc := NewProxyAutoMaintenanceService(adminService, settingService, cfg)
+	svc.Start()
+	return svc
+}
+
 // ProvideOpsScheduledReportService creates and starts OpsScheduledReportService.
 func ProvideOpsScheduledReportService(
 	opsService *OpsService,
@@ -486,4 +497,5 @@ var ProviderSet = wire.NewSet(
 	ProvideIdempotencyCleanupService,
 	ProvideScheduledTestService,
 	ProvideScheduledTestRunnerService,
+	ProvideProxyAutoMaintenanceService,
 )

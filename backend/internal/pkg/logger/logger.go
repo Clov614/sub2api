@@ -49,6 +49,7 @@ var (
 	initOptions   InitOptions
 	currentSink   atomic.Value // sinkState
 	stdLogUndo    func()
+	outputClosers []io.Closer
 	bootstrapOnce sync.Once
 )
 
@@ -72,22 +73,29 @@ func Init(options InitOptions) error {
 
 func initLocked(options InitOptions) error {
 	normalized := options.normalized()
-	zl, al, err := buildLogger(normalized)
+	zl, al, closers, err := buildLogger(normalized)
 	if err != nil {
 		return err
 	}
 
 	prev := global.Load()
+	prevClosers := outputClosers
 	global.Store(zl)
 	sugar.Store(zl.Sugar())
 	atomicLevel = al
 	initOptions = normalized
+	outputClosers = closers
 
 	bridgeSlogLocked()
 	bridgeStdLogLocked()
 
 	if prev != nil {
 		_ = prev.Sync()
+	}
+	for _, c := range prevClosers {
+		if c != nil {
+			_ = c.Close()
+		}
 	}
 	return nil
 }
@@ -199,9 +207,18 @@ func With(fields ...zap.Field) *zap.Logger {
 }
 
 func Sync() {
+	mu.RLock()
+	defer mu.RUnlock()
+
 	l := global.Load()
 	if l != nil {
 		_ = l.Sync()
+	}
+
+	for _, c := range outputClosers {
+		if c != nil {
+			_ = c.Close()
+		}
 	}
 }
 
@@ -238,7 +255,19 @@ func bridgeSlogLocked() {
 	slog.SetDefault(slog.New(newSlogZapHandler(base.Named("slog"))))
 }
 
-func buildLogger(options InitOptions) (*zap.Logger, zap.AtomicLevel, error) {
+type noSyncWriter struct {
+	io.Writer
+}
+
+func (w noSyncWriter) Sync() error {
+	return nil
+}
+
+func lockNoSyncWriter(w io.Writer) zapcore.WriteSyncer {
+	return zapcore.Lock(noSyncWriter{Writer: w})
+}
+
+func buildLogger(options InitOptions) (*zap.Logger, zap.AtomicLevel, []io.Closer, error) {
 	level, _ := parseLevel(options.Level)
 	atomic := zap.NewAtomicLevelAt(level)
 
@@ -265,6 +294,7 @@ func buildLogger(options InitOptions) (*zap.Logger, zap.AtomicLevel, error) {
 
 	sinkCore := newSinkCore()
 	cores := make([]zapcore.Core, 0, 3)
+	closers := make([]io.Closer, 0, 1)
 
 	if options.Output.ToStdout {
 		infoPriority := zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {
@@ -273,12 +303,12 @@ func buildLogger(options InitOptions) (*zap.Logger, zap.AtomicLevel, error) {
 		errPriority := zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {
 			return lvl >= atomic.Level() && lvl >= zapcore.WarnLevel
 		})
-		cores = append(cores, zapcore.NewCore(enc, zapcore.Lock(os.Stdout), infoPriority))
-		cores = append(cores, zapcore.NewCore(enc, zapcore.Lock(os.Stderr), errPriority))
+		cores = append(cores, zapcore.NewCore(enc, lockNoSyncWriter(os.Stdout), infoPriority))
+		cores = append(cores, zapcore.NewCore(enc, lockNoSyncWriter(os.Stderr), errPriority))
 	}
 
 	if options.Output.ToFile {
-		fileCore, filePath, fileErr := buildFileCore(enc, atomic, options)
+		fileCore, filePath, fileCloser, fileErr := buildFileCore(enc, atomic, options)
 		if fileErr != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "time=%s level=WARN msg=\"日志文件输出初始化失败，降级为仅标准输出\" path=%s err=%v\n",
 				time.Now().Format(time.RFC3339Nano),
@@ -287,11 +317,12 @@ func buildLogger(options InitOptions) (*zap.Logger, zap.AtomicLevel, error) {
 			)
 		} else {
 			cores = append(cores, fileCore)
+			closers = append(closers, fileCloser)
 		}
 	}
 
 	if len(cores) == 0 {
-		cores = append(cores, zapcore.NewCore(enc, zapcore.Lock(os.Stdout), atomic))
+		cores = append(cores, zapcore.NewCore(enc, lockNoSyncWriter(os.Stdout), atomic))
 	}
 
 	core := zapcore.NewTee(cores...)
@@ -313,10 +344,10 @@ func buildLogger(options InitOptions) (*zap.Logger, zap.AtomicLevel, error) {
 		zap.String("service", options.ServiceName),
 		zap.String("env", options.Environment),
 	)
-	return logger, atomic, nil
+	return logger, atomic, closers, nil
 }
 
-func buildFileCore(enc zapcore.Encoder, atomic zap.AtomicLevel, options InitOptions) (zapcore.Core, string, error) {
+func buildFileCore(enc zapcore.Encoder, atomic zap.AtomicLevel, options InitOptions) (zapcore.Core, string, io.Closer, error) {
 	filePath := options.Output.FilePath
 	if strings.TrimSpace(filePath) == "" {
 		filePath = resolveLogFilePath("")
@@ -324,7 +355,7 @@ func buildFileCore(enc zapcore.Encoder, atomic zap.AtomicLevel, options InitOpti
 
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, filePath, err
+		return nil, filePath, nil, err
 	}
 	lj := &lumberjack.Logger{
 		Filename:   filePath,
@@ -334,7 +365,7 @@ func buildFileCore(enc zapcore.Encoder, atomic zap.AtomicLevel, options InitOpti
 		Compress:   options.Rotation.Compress,
 		LocalTime:  options.Rotation.LocalTime,
 	}
-	return zapcore.NewCore(enc, zapcore.AddSync(lj), atomic), filePath, nil
+	return zapcore.NewCore(enc, zapcore.AddSync(lj), atomic), filePath, lj, nil
 }
 
 type sinkCore struct {
